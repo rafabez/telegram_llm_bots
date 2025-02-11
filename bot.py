@@ -13,8 +13,16 @@ import certifi
 from collections import defaultdict
 
 # Configurações do sistema
+import os
+
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-print("Loaded TELEGRAM_TOKEN:", repr(TELEGRAM_TOKEN))
+if TELEGRAM_TOKEN:
+    # Remove leading and trailing whitespace
+    TELEGRAM_TOKEN = TELEGRAM_TOKEN.strip()
+    # If it starts with an "=" character, remove it
+    if TELEGRAM_TOKEN.startswith("="):
+        TELEGRAM_TOKEN = TELEGRAM_TOKEN[1:].strip()
+
 if not TELEGRAM_TOKEN:
     raise EnvironmentError("O token do bot não foi configurado. Defina 'TELEGRAM_TOKEN' corretamente nas variáveis de ambiente.")
 
