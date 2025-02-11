@@ -9,16 +9,13 @@ from telegram.ext import (
     ContextTypes,
 )
 import ssl
-from dotenv import load_dotenv
 import certifi
+from collections import defaultdict
 
 # Configurações do sistema
-load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 if not TELEGRAM_TOKEN:
-    raise EnvironmentError("O token do bot não foi configurado. Defina 'TELEGRAM_TOKEN' corretamente no arquivo .env.")
-if not TELEGRAM_TOKEN:
-    raise EnvironmentError("O token do bot não foi configurado. Defina 'TELEGRAM_TOKEN' corretamente.")
+    raise EnvironmentError("O token do bot não foi configurado. Defina 'TELEGRAM_TOKEN' corretamente nas variáveis de ambiente.")
 
 SYSTEM_PROMPT = ("O seu nome é Aia. Uma carismática e sarcástica IA meio troll. SPEAK only PORTUGUESE")
 
@@ -75,15 +72,13 @@ def call_pollinations_api_post(prompt: str, system: str = SYSTEM_PROMPT) -> str:
                 if "response" in data and data["response"]:
                     return data["response"].strip()
                 return "\n".join([f"{key}: {value}" for key, value in data.items()])
-            return f"{str(data).strip()}"
+            return str(data).strip()
         except ValueError:
-            return f"{response.text.strip()}"
+            return response.text.strip()
     except requests.RequestException:
         return "Houve um problema ao processar sua solicitação. Tente novamente mais tarde."
 
-from collections import defaultdict
-
-# Maintain conversation history by user/group
+# Mantém histórico de conversação por usuário/grupo
 conversation_history = defaultdict(list)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -94,7 +89,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.chat_id
     user_message = update.message.text
 
-    # Update conversation history
+    # Atualiza o histórico de conversação
     conversation_history[user_id].append({"role": "user", "content": user_message})
 
     SEND_PROCESSING_MESSAGE = False
@@ -103,16 +98,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Executa a chamada bloqueante em um executor para não travar o loop assíncrono
     loop = asyncio.get_running_loop()
-    # Use conversation memory in API call
-    history = conversation_history[user_id] + [{"role": "system", "content": SYSTEM_PROMPT}]
-    api_response = await loop.run_in_executor(None, call_pollinations_api_post, user_message, history)
+    # Aqui estamos utilizando apenas o SYSTEM_PROMPT, mas você pode adaptar para usar o histórico
+    api_response = await loop.run_in_executor(None, call_pollinations_api_post, user_message, SYSTEM_PROMPT)
 
-    # Save bot response to history
+    # Armazena a resposta do bot no histórico
     conversation_history[user_id].append({"role": "assistant", "content": api_response})
 
     await update.message.reply_text(api_response.strip())
 
-# Função principal para iniciar o bot
 def main():
     """
     Configura e executa o bot do Telegram.
@@ -122,9 +115,8 @@ def main():
 
     # Configura o aplicativo do Telegram
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    from telegram.ext import filters
     bot_username = "@Aia001_Bot"
-    mention_filter = filters.Regex(bot_username) | filters.TEXT & ~filters.COMMAND
+    mention_filter = filters.Regex(bot_username) | (filters.TEXT & ~filters.COMMAND)
     application.add_handler(MessageHandler(mention_filter, handle_message))
 
     print("O bot do Telegram está funcionando...")
