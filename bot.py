@@ -14,6 +14,7 @@ from collections import defaultdict
 
 # Configurações do sistema
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+print("Loaded TELEGRAM_TOKEN:", repr(TELEGRAM_TOKEN))
 if not TELEGRAM_TOKEN:
     raise EnvironmentError("O token do bot não foi configurado. Defina 'TELEGRAM_TOKEN' corretamente nas variáveis de ambiente.")
 
