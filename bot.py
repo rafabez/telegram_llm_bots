@@ -98,6 +98,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.chat_id
     user_message = update.message.text
 
+    # Verifica se o bot foi mencionado no texto
+    bot_username = "@aia"
+    if bot_username.lower() not in user_message.lower():
+        return  # Não faz nada se o bot não for mencionado
+
     # Atualiza o histórico de conversação
     conversation_history[user_id].append({"role": "user", "content": user_message})
 
