@@ -129,7 +129,7 @@ def main():
 
     # Configura o aplicativo do Telegram
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    bot_username = "@aia"
+    bot_username = "@Aia001_Bot"
     mention_filter = filters.Regex(f"(?i){bot_username}\\b")
     application.add_handler(MessageHandler(mention_filter, handle_message))
 
