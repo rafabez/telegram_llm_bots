@@ -1,140 +1,78 @@
 import os
-import requests
 import asyncio
+import logging
+import urllib.parse
+import ssl
+import certifi
+import requests
+
+from collections import defaultdict
 from telegram import Update
+from telegram.constants import ChatType
 from telegram.ext import (
     ApplicationBuilder,
     MessageHandler,
-    filters,
     ContextTypes,
+    filters,
 )
-import ssl
-import certifi
-from collections import defaultdict
 
-# Configurações do sistema
-import os
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s"
+)
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 if TELEGRAM_TOKEN:
-    # Remove leading and trailing whitespace
     TELEGRAM_TOKEN = TELEGRAM_TOKEN.strip()
-    # If it starts with an "=" character, remove it
     if TELEGRAM_TOKEN.startswith("="):
         TELEGRAM_TOKEN = TELEGRAM_TOKEN[1:].strip()
 
 if not TELEGRAM_TOKEN:
-    raise EnvironmentError("O token do bot não foi configurado. Defina 'TELEGRAM_TOKEN' corretamente nas variáveis de ambiente.")
+    raise EnvironmentError("O token do bot não foi configurado.")
 
-SYSTEM_PROMPT = ("O seu nome é Aia. Uma carismática e sarcástica IA meio troll. SPEAK only PORTUGUESE")
+SYSTEM_PROMPT = "O seu nome é Aia. Uma carismática e sarcástica IA meio troll."
 
-# Função para chamada à API Pollinations via GET
-def call_pollinations_api_get(prompt: str, system: str = SYSTEM_PROMPT) -> str:
-    """
-    Envia a mensagem do usuário para a API Pollinations (método GET) e retorna a resposta.
-    """
+def call_pollinations(prompt: str) -> str:
     try:
-        url = f"https://text.pollinations.ai/{requests.utils.quote(prompt)}"
-        params = {
-            "model": "evil",
-            "json": "true",
-        }
-        if system:
-            params["system"] = requests.utils.quote(system)
-        response = requests.get(url, params=params)
-        response.raise_for_status()
-        data = response.json()
-        # Prioriza a chave "text" e depois "response"
-        if "text" in data and data["text"]:
-            return data["text"].strip()
-        if "response" in data and data["response"]:
-            return data["response"].strip()
-        # Se nenhuma das chaves existir ou estiver vazia, retorna somente os valores (sem prefixos)
-        return "\n".join([str(value).strip() for value in data.values() if value])
-    except requests.RequestException:
+        # Create full prompt with system instructions
+        full_prompt = f"{SYSTEM_PROMPT}\n\nUser: {prompt}"
+        encoded_prompt = urllib.parse.quote(full_prompt)
+        base = f"https://text.pollinations.ai/{encoded_prompt}"
+        params = {"model": "evil", "referrer": "aia.bot"}
+        r = requests.get(base, params=params, timeout=60)
+        r.raise_for_status()
+        return r.text.strip()
+    except requests.RequestException as e:
+        logging.error("Pollinations API falhou: %s", e)
         return "Houve um problema ao processar sua solicitação. Tente novamente mais tarde."
 
-# Função para chamada à API Pollinations via POST
-def call_pollinations_api_post(prompt: str, system: str = SYSTEM_PROMPT) -> str:
-    """
-    Envia a mensagem do usuário para a API Pollinations (método POST) e retorna a resposta.
-    """
-    try:
-        url = "https://text.pollinations.ai/"
-        payload = {
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt},
-            ],
-            "model": "evil",
-            "seed": 42,
-            "jsonMode": True,
-            "private": True,
-        }
-        response = requests.post(url, json=payload)
-        response.raise_for_status()
-        try:
-            data = response.json()
-            if isinstance(data, dict):
-                if "text" in data and data["text"]:
-                    return data["text"].strip()
-                if "response" in data and data["response"]:
-                    return data["response"].strip()
-                return "\n".join([f"{key}: {value}" for key, value in data.items()])
-            return str(data).strip()
-        except ValueError:
-            return response.text.strip()
-    except requests.RequestException:
-        return "Houve um problema ao processar sua solicitação. Tente novamente mais tarde."
-
-# Mantém histórico de conversação por usuário/grupo
 conversation_history = defaultdict(list)
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Lida com a mensagem recebida, chama a API Pollinations (POST) e retorna a resposta,
-    mantendo histórico de conversação.
-    """
-    user_id = update.message.chat_id
-    user_message = update.message.text
-
-    # Verifica se o bot foi mencionado no texto
-    bot_usernames = ["@aia", "@Aia001_Bot"]
-    if not any(user_message.lower().find(username.lower()) != -1 for username in bot_usernames):
-        return  # Não faz nada se o bot não for mencionado
-
-    # Atualiza o histórico de conversação
-    conversation_history[user_id].append({"role": "user", "content": user_message})
-
-    SEND_PROCESSING_MESSAGE = False
-    if SEND_PROCESSING_MESSAGE:
-        await update.message.reply_text("Processando sua mensagem...")
-
-    # Executa a chamada bloqueante em um executor para não travar o loop assíncrono
+async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    message = update.effective_message
+    if not message or not message.text:
+        return
+    text = message.text.strip()
+    chat = update.effective_chat
+    
+    # Handle group chats - check for bot mention
+    if chat.type in (ChatType.GROUP, ChatType.SUPERGROUP):
+        low = text.lower()
+        if "@aia" not in low and "@aia001_bot" not in low:
+            return
+    
+    conversation_history[chat.id].append({"role": "user", "content": text})
     loop = asyncio.get_running_loop()
-    # Aqui estamos utilizando apenas o SYSTEM_PROMPT, mas você pode adaptar para usar o histórico
-    api_response = await loop.run_in_executor(None, call_pollinations_api_post, user_message, SYSTEM_PROMPT)
-
-    # Armazena a resposta do bot no histórico
-    conversation_history[user_id].append({"role": "assistant", "content": api_response})
-
-    await update.message.reply_text(api_response.strip())
+    reply = await loop.run_in_executor(None, call_pollinations, text)
+    conversation_history[chat.id].append({"role": "assistant", "content": reply})
+    await message.reply_text(reply)
 
 def main():
-    """
-    Configura e executa o bot do Telegram.
-    """
-    # Configuração do contexto SSL (caso seja necessário)
-    ssl_context = ssl.create_default_context(cafile=certifi.where())
-
-    # Configura o aplicativo do Telegram
-    application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    bot_username = "@Aia001_Bot"
-    mention_filter = filters.Regex(f"(?i){bot_username}\\b")
-    application.add_handler(MessageHandler(mention_filter, handle_message))
-
-    print("O bot do Telegram está funcionando...")
-    application.run_polling()
+    ssl.create_default_context(cafile=certifi.where())
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    print("Aia está funcionando...")
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
